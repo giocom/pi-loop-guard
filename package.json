@@ -1,0 +1,52 @@
+{
+  "name": "pi-loop-guard",
+  "version": "1.0.0",
+  "description": "Pi extension that detects and warns about repeated file operations",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-mono",
+    "pi-package",
+    "extension",
+    "loop-detection",
+    "guard"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run",
+    "check": "npm run typecheck && npm test"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@types/node": "^26.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.7"
+  }
+}
