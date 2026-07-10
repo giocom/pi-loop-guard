@@ -1,50 +1,11 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { FileOperationTracker } from "./tracker.js";
 
 const REPEAT_THRESHOLD = 3;
 
 /**
- * Tracks file operations per path+toolName key.
- */
-class FileOperationTracker {
-  private readonly operations = new Map<string, { count: number }>();
-  private readonly threshold: number;
-
-  constructor(threshold: number) {
-    this.threshold = threshold;
-  }
-
-  record(path: string, toolName: string): { count: number; isRepeating: boolean } {
-    const key = `${toolName}:${path}`;
-    const existing = this.operations.get(key);
-    if (!existing) {
-      this.operations.set(key, { count: 1 });
-      return { count: 1, isRepeating: false };
-    }
-    const nextCount = existing.count + 1;
-    existing.count = nextCount;
-    return { count: nextCount, isRepeating: nextCount >= this.threshold };
-  }
-
-  getRepeats(minThreshold?: number): Array<{ path: string; toolName: string; count: number }> {
-    const min = minThreshold ?? this.threshold;
-    const result: Array<{ path: string; toolName: string; count: number }> = [];
-    for (const [key, entry] of this.operations) {
-      if (entry.count >= min) {
-        const sep = key.indexOf(":");
-        result.push({ path: key.slice(sep + 1), toolName: key.slice(0, sep), count: entry.count });
-      }
-    }
-    return result;
-  }
-
-  reset(): void {
-    this.operations.clear();
-  }
-}
-
-/**
- * Pi extension that detects repeated file write/edit operations and gently
- * nudges the model to self-correct instead of hard-blocking.
+ * Pi extension that detects repeated file operations and same-model-response
+ * loops, then nudges the model to self-correct.
  */
 export default async function (pi: ExtensionAPI): Promise<void> {
   const tracker = new FileOperationTracker(REPEAT_THRESHOLD);
@@ -56,26 +17,29 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   pi.on("tool_result", async (event) => {
     const toolName = event.toolName;
-    if (toolName !== "write" && toolName !== "edit") {
-      return;
-    }
+    if (toolName !== "write" && toolName !== "edit") return;
 
     const input = event.input as Record<string, unknown>;
     const path = typeof input?.path === "string" ? input.path : undefined;
-    if (!path) {
-      return;
-    }
+    if (!path) return;
 
     const result = tracker.record(path, toolName);
     const key = `${toolName}:${path}`;
 
-    if (result.count === REPEAT_THRESHOLD && !notifiedKeys.has(key)) {
+    // Notify on threshold-crossings: 3, 6, 9, 15, 21… (multiples of threshold)
+    const isEscalation =
+      result.count >= REPEAT_THRESHOLD &&
+      (result.count % REPEAT_THRESHOLD === 0 || result.count === REPEAT_THRESHOLD);
+    const escalationKey = `${key}@${result.count}`;
+
+    if (isEscalation && !notifiedKeys.has(escalationKey)) {
       pendingKeys.add(key);
-      notifiedKeys.add(key);
+      notifiedKeys.add(escalationKey);
 
       const reminder =
-        `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times in a row. ` +
-        `Please verify the content is correct and consider whether this repetition is truly necessary before proceeding.`;
+        result.count === REPEAT_THRESHOLD
+          ? `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times in a row. Please verify the content is correct and consider whether this repetition is truly necessary before proceeding.`
+          : `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times now. The earlier warning may have been missed. Please verify you are not stuck and consider a different approach.`;
 
       const content = [...event.content];
       const last = content.at(-1);
@@ -129,9 +93,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   });
 
   pi.on("context", async (event) => {
-    if (pendingKeys.size === 0) {
-      return;
-    }
+    if (pendingKeys.size === 0) return;
 
     const parts: string[] = [];
 
@@ -149,15 +111,12 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
 
     pendingKeys.clear();
-
     if (parts.length === 0) return;
 
     const messages = [...event.messages];
     messages.push({
       role: "user",
-      content:
-        `[loop-guard] ${parts.join(" ")} ` +
-        `Please pause, review the current state, and take a different direction.`,
+      content: `[loop-guard] ${parts.join(" ")} Please pause, review the current state, and take a different direction.`,
       timestamp: Date.now(),
     });
     return { messages };
