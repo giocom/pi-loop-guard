@@ -47,16 +47,14 @@ export default async function (pi) {
             }
             return;
         }
-        // --- General tool call repetition tracking (bash, agent-browser, eval, etc.) ---
-        // Build a stable fingerprint: toolName + key input fields
-        // For tools with a "command" or "code" field, use that. Otherwise use full input.
+        // --- General tool call repetition tracking ---
+        // Build a fingerprint from the tool name (+ command/code for parameterised tools).
+        // This catches repeated litellm_skill_list, repeated agent-browser eval, etc.
         const cmd = typeof input?.command === "string" ? input.command :
             typeof input?.code === "string" ? input.code :
                 typeof input?.url === "string" ? input.url :
                     null;
-        const fingerprint = cmd ? `${toolName}:${cmd}` : null;
-        if (!fingerprint)
-            return;
+        const fingerprint = cmd ? `${toolName}:${cmd}` : toolName;
         const prev = toolCallCounts.get(fingerprint) ?? 0;
         const next = prev + 1;
         toolCallCounts.set(fingerprint, next);
