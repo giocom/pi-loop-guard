@@ -51,14 +51,15 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   const pendingKeys = new Set<string>();
   const notifiedKeys = new Set<string>();
 
-  pi.on("tool_result", async (event, ctx) => {
+  const responseHistory: string[] = [];
+  const RESPONSE_KEY = "__response_repeat__";
+
+  pi.on("tool_result", async (event) => {
     const toolName = event.toolName;
-    // Only intercept write and edit
     if (toolName !== "write" && toolName !== "edit") {
       return;
     }
 
-    // Read path from tool call arguments
     const input = event.input as Record<string, unknown>;
     const path = typeof input?.path === "string" ? input.path : undefined;
     if (!path) {
@@ -68,7 +69,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     const result = tracker.record(path, toolName);
     const key = `${toolName}:${path}`;
 
-    // Inject reminder exactly once when crossing threshold
     if (result.count === REPEAT_THRESHOLD && !notifiedKeys.has(key)) {
       pendingKeys.add(key);
       notifiedKeys.add(key);
@@ -95,28 +95,69 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
   });
 
+  pi.on("turn_end", async (event) => {
+    const msg = event.message;
+    if (!msg || msg.role !== "assistant") return;
+
+    const contents = msg.content as unknown as Array<Record<string, unknown>>;
+    const text = contents
+      .filter((c): c is Record<string, string> => c.type === "text")
+      .map((c) => c.text)
+      .join("");
+
+    if (!text) return;
+
+    const toolResults = event.toolResults as Array<unknown> | undefined;
+    if (toolResults && toolResults.length > 0) {
+      responseHistory.length = 0;
+      return;
+    }
+
+    responseHistory.push(text);
+    if (responseHistory.length > REPEAT_THRESHOLD) {
+      responseHistory.shift();
+    }
+
+    if (
+      responseHistory.length === REPEAT_THRESHOLD &&
+      responseHistory.every((t) => t === responseHistory[0]) &&
+      !notifiedKeys.has(RESPONSE_KEY)
+    ) {
+      pendingKeys.add(RESPONSE_KEY);
+      notifiedKeys.add(RESPONSE_KEY);
+    }
+  });
+
   pi.on("context", async (event) => {
     if (pendingKeys.size === 0) {
       return;
     }
 
-    const repeats = tracker.getRepeats();
-    const details = repeats
+    const parts: string[] = [];
+
+    if (pendingKeys.has(RESPONSE_KEY)) {
+      parts.push("You have given the same response multiple times in a row. Please change your approach or ask for clarification instead of repeating yourself.");
+    }
+
+    const fileRepeats = tracker.getRepeats();
+    const fileDetails = fileRepeats
       .filter((r) => pendingKeys.has(`${r.toolName}:${r.path}`))
       .map((r) => `${r.path} (${r.toolName} \u00d7${r.count})`)
       .join(", ");
+    if (fileDetails) {
+      parts.push(`The following files have been modified repeatedly: ${fileDetails}.`);
+    }
+
     pendingKeys.clear();
 
-    if (!details) {
-      return;
-    }
+    if (parts.length === 0) return;
 
     const messages = [...event.messages];
     messages.push({
       role: "user",
       content:
-        `[loop-guard] The following files have been modified repeatedly: ${details}. ` +
-        `Please pause, review the current state, and confirm whether further changes are truly needed before proceeding.`,
+        `[loop-guard] ${parts.join(" ")} ` +
+        `Please pause, review the current state, and take a different direction.`,
       timestamp: Date.now(),
     });
     return { messages };
@@ -126,5 +167,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     tracker.reset();
     pendingKeys.clear();
     notifiedKeys.clear();
+    responseHistory.length = 0;
   });
 }
