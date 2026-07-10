@@ -51,9 +51,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   const pendingKeys = new Set<string>();
   const notifiedKeys = new Set<string>();
 
-  // Debug: confirm extension loaded
-  process.stderr.write("[pi-loop-guard] extension loaded\n");
-
   pi.on("tool_result", async (event, ctx) => {
     const toolName = event.toolName;
     // Only intercept write and edit
@@ -61,17 +58,12 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       return;
     }
 
-    process.stderr.write(`[pi-loop-guard] ${toolName} result received\n`);
-
     // Read path from tool call arguments
     const input = event.input as Record<string, unknown>;
     const path = typeof input?.path === "string" ? input.path : undefined;
     if (!path) {
-      process.stderr.write(`[pi-loop-guard] no path in input keys=${Object.keys(input ?? {}).join(",")}\n`);
       return;
     }
-
-    process.stderr.write(`[pi-loop-guard] tracking ${toolName} on ${path}\n`);
 
     const result = tracker.record(path, toolName);
     const key = `${toolName}:${path}`;
@@ -80,8 +72,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     if (result.count === REPEAT_THRESHOLD && !notifiedKeys.has(key)) {
       pendingKeys.add(key);
       notifiedKeys.add(key);
-
-      process.stderr.write(`[pi-loop-guard] threshold reached for ${key}\n`);
 
       const reminder =
         `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times in a row. ` +

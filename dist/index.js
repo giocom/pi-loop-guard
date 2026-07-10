@@ -42,30 +42,24 @@ export default async function (pi) {
     const tracker = new FileOperationTracker(REPEAT_THRESHOLD);
     const pendingKeys = new Set();
     const notifiedKeys = new Set();
-    // Debug: confirm extension loaded
-    process.stderr.write("[pi-loop-guard] extension loaded\n");
     pi.on("tool_result", async (event, ctx) => {
         const toolName = event.toolName;
         // Only intercept write and edit
         if (toolName !== "write" && toolName !== "edit") {
             return;
         }
-        process.stderr.write(`[pi-loop-guard] ${toolName} result received\n`);
         // Read path from tool call arguments
         const input = event.input;
         const path = typeof input?.path === "string" ? input.path : undefined;
         if (!path) {
-            process.stderr.write(`[pi-loop-guard] no path in input keys=${Object.keys(input ?? {}).join(",")}\n`);
             return;
         }
-        process.stderr.write(`[pi-loop-guard] tracking ${toolName} on ${path}\n`);
         const result = tracker.record(path, toolName);
         const key = `${toolName}:${path}`;
         // Inject reminder exactly once when crossing threshold
         if (result.count === REPEAT_THRESHOLD && !notifiedKeys.has(key)) {
             pendingKeys.add(key);
             notifiedKeys.add(key);
-            process.stderr.write(`[pi-loop-guard] threshold reached for ${key}\n`);
             const reminder = `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times in a row. ` +
                 `Please verify the content is correct and consider whether this repetition is truly necessary before proceeding.`;
             const content = [...event.content];
