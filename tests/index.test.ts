@@ -102,6 +102,49 @@ describe("pi-loop-guard extension", () => {
     expect(r5diff).toBeUndefined();
   });
 
+  it("injects reminder on 5th repeated bash command (general tool tracking)", async () => {
+    const pi = createMockPi();
+    await extensionFactory(pi);
+    const mockCtx = {} as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
+
+    // 1st–4th identical bash call — no reminder
+    for (let i = 0; i < 4; i++) {
+      const r = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+        toolName: "bash",
+        input: { command: "agent-browser open http://10.11.60.145:3000" },
+        content: [{ type: "text", text: "result" }],
+      }, mockCtx);
+      expect(r).toBeUndefined();
+    }
+
+    // 5th identical bash call — reminder injected
+    const r5 = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+      toolName: "bash",
+      input: { command: "agent-browser open http://10.11.60.145:3000" },
+      content: [{ type: "text", text: "result" }],
+    }, mockCtx);
+    expect(r5).toBeDefined();
+    expect(r5.content[0].text).toContain("loop-guard");
+    expect(r5.content[0].text).toContain("bash");
+    expect(r5.content[0].text).toContain("5 times in a row");
+  });
+
+  it("tracks different bash commands independently (separate fingerprints)", async () => {
+    const pi = createMockPi();
+    await extensionFactory(pi);
+    const mockCtx = {} as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
+
+    // 5 slightly different commands — each has count 1, no threshold reached
+    for (let i = 0; i < 5; i++) {
+      const r = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+        toolName: "bash",
+        input: { command: `agent-browser open http://10.11.60.145:300${i}` },
+        content: [{ type: "text", text: "result" }],
+      }, mockCtx);
+      expect(r).toBeUndefined();
+    }
+  });
+
   it("does not inject reminder for read tool", async () => {
     const pi = createMockPi();
     await extensionFactory(pi);

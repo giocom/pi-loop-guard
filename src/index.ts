@@ -93,6 +93,21 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       if (!notifiedKeys.has(escalationKey)) {
         pendingKeys.add(TOOL_REPEAT_PREFIX);
         notifiedKeys.add(escalationKey);
+        const reminder =
+          next === REPEAT_THRESHOLD
+            ? `\n\n[loop-guard] You have called \`${toolName}\` with the same arguments ${next} times in a row. Your approach is not producing different results — try searching the web or using context7 to look up documentation before making further changes.`
+            : `\n\n[loop-guard] You have called \`${toolName}\` with the same arguments ${next} times now. The earlier warning may have been ignored. Consider looking up relevant documentation via context7 or web search instead of repeating the same command.`;
+        const content = [...event.content];
+        const last = content.at(-1);
+        if (
+          last && typeof last === "object" && last !== null &&
+          "type" in last && (last as { type: unknown }).type === "text" && "text" in last
+        ) {
+          (last as { text: string }).text += reminder;
+        } else {
+          content.push({ type: "text", text: reminder });
+        }
+        return { content };
       }
     }
   });
