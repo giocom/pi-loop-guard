@@ -41,7 +41,7 @@ pi install git:github.com/giocom/pi-loop-guard
 Or run directly for testing:
 
 ```bash
-pi -e ./dist/index.js
+pi -e ./src/index.ts
 ```
 
 ## Testing
