@@ -48,8 +48,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
           notifiedKeys.add(escalationKey);
           const reminder =
             result.count === REPEAT_THRESHOLD
-              ? `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times in a row. Please verify the content is correct and consider whether this repetition is truly necessary before proceeding.`
-              : `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times now. The earlier warning may have been ignored. Please verify you are not stuck and consider a different approach.`;
+              ? `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times in a row. If you are stuck, try searching the web or using context7 to look up documentation before making further changes.`
+              : `\n\n[loop-guard] This file has been ${toolName}d ${result.count} times now. The earlier warning may have been ignored. Consider looking up relevant documentation via context7 or web search instead of repeating the same change.`;
           const content = [...event.content];
           const last = content.at(-1);
           if (
@@ -124,11 +124,11 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     const parts: string[] = [];
 
     if (pendingKeys.has(RESPONSE_KEY)) {
-      parts.push("You have given the same response multiple times in a row.");
+      parts.push("You have given the same response multiple times in a row. Try searching the web or using context7 to find the correct solution instead.");
     }
 
     if (pendingKeys.has(TOOL_REPEAT_PREFIX)) {
-      parts.push("You have executed the same command repeatedly. Your approach is not producing different results — try a different direction.");
+      parts.push("You have executed the same command repeatedly. Your approach is not producing different results — try searching the web or using context7 to look up a correct solution.");
     }
 
     const fileRepeats = tracker.getRepeats();
@@ -146,7 +146,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     const messages = [...event.messages];
     messages.push({
       role: "user",
-      content: `[loop-guard] ${parts.join(" ")} Please pause, review your approach, and try something different.`,
+      content: `[loop-guard] ${parts.join(" ")} Use web search or context7 MCP to look up documentation and find the correct approach before continuing. If you've been reading the same file repeatedly, try searching GitHub for implementation examples instead.`,
       timestamp: Date.now(),
     });
     return { messages };
