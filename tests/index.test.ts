@@ -145,6 +145,43 @@ describe("pi-loop-guard extension", () => {
     }
   });
 
+  it("detects response repeats even when tool calls were made (turn_end with toolResults)", async () => {
+    const pi = createMockPi();
+    await extensionFactory(pi);
+    const mockCtx = {} as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
+
+    // 5 identical assistant responses, each with tool results (like in a real edit loop)
+    for (let i = 0; i < 4; i++) {
+      const r = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("turn_end", {
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "main.tsx에서 createRoot를 호출하고, HMR reload 시 React component tree를 유지하겠습니다." }],
+        },
+        toolResults: [{ toolName: "edit", input: { filePath: "/main.tsx" } }],
+      }, mockCtx);
+      expect(r).toBeUndefined();
+    }
+
+    // 5th identical response — should detect even with toolResults present
+    const r5 = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("turn_end", {
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "main.tsx에서 createRoot를 호출하고, HMR reload 시 React component tree를 유지하겠습니다." }],
+      },
+      toolResults: [{ toolName: "edit", input: { filePath: "/main.tsx" } }],
+    }, mockCtx);
+    expect(r5).toBeUndefined(); // turn_end doesn't return — pendingKeys set instead
+
+    // Now context should inject the system message
+    const ctxResult = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("context", {
+      messages: [{ role: "user", content: "hello" }],
+    }, mockCtx);
+    expect(ctxResult).toBeDefined();
+    expect(ctxResult.messages).toHaveLength(2);
+    expect(ctxResult.messages[1].content).toContain("loop-guard");
+    expect(ctxResult.messages[1].content).toContain("same response");
+  });
+
   it("does not inject reminder for read tool", async () => {
     const pi = createMockPi();
     await extensionFactory(pi);

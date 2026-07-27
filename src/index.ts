@@ -123,12 +123,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       .join("");
     if (!text) return;
 
-    const toolResults = event.toolResults as Array<unknown> | undefined;
-    if (toolResults && toolResults.length > 0) {
-      responseHistory.length = 0;
-      return;
-    }
-
     responseHistory.push(text);
     if (responseHistory.length > REPEAT_THRESHOLD) {
       responseHistory.shift();
