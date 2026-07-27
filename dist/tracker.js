@@ -7,8 +7,8 @@ export class FileOperationTracker {
     makeKey(path, toolName) {
         return `${toolName}:${path}`;
     }
-    record(path, toolName) {
-        const key = this.makeKey(path, toolName);
+    record(path, toolName, fingerprint) {
+        const key = fingerprint ? `${toolName}:${path}::${fingerprint}` : this.makeKey(path, toolName);
         const existing = this.counts.get(key) ?? 0;
         const nextCount = existing + 1;
         this.counts.set(key, nextCount);
@@ -20,7 +20,11 @@ export class FileOperationTracker {
         for (const [key, count] of this.counts) {
             if (count >= min) {
                 const sep = key.indexOf(":");
-                result.push({ path: key.slice(sep + 1), toolName: key.slice(0, sep), count });
+                const rest = key.slice(sep + 1);
+                // If fingerprint is present (path::fingerprint), extract just the display path
+                const doubleSep = rest.indexOf("::");
+                const path = doubleSep >= 0 ? rest.slice(0, doubleSep) : rest;
+                result.push({ path, toolName: key.slice(0, sep), count });
             }
         }
         return result;

@@ -32,37 +32,74 @@ describe("pi-loop-guard extension", () => {
     expect(pi.on).toHaveBeenCalledWith("session_shutdown", expect.any(Function));
   });
 
-  it("appends reminder on 3rd repeated write", async () => {
+  it("appends reminder on 5th repeated write", async () => {
     const pi = createMockPi();
     await extensionFactory(pi);
 
     const mockCtx = {} as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
 
-    // 1st write — no reminder
-    const r1 = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
-      toolName: "write",
-      input: { path: "/foo.ts" },
-      content: [{ type: "text", text: "ok" }],
-    }, mockCtx);
-    expect(r1).toBeUndefined();
+    // 1st–4th write — no reminder
+    for (let i = 0; i < 4; i++) {
+      const r = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+        toolName: "write",
+        input: { path: "/foo.ts" },
+        content: [{ type: "text", text: "ok" }],
+      }, mockCtx);
+      expect(r).toBeUndefined();
+    }
 
-    // 2nd write — no reminder
-    const r2 = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+    // 5th write — reminder injected
+    const r5 = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
       toolName: "write",
       input: { path: "/foo.ts" },
       content: [{ type: "text", text: "ok" }],
     }, mockCtx);
-    expect(r2).toBeUndefined();
+    expect(r5).toBeDefined();
+    expect(r5.content[0].text).toContain("loop-guard");
+    expect(r5.content[0].text).toContain("5 times in a row");
+  });
 
-    // 3rd write — reminder injected
-    const r3 = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
-      toolName: "write",
-      input: { path: "/foo.ts" },
+  it("counts edit tools with identical content separately from different content", async () => {
+    const pi = createMockPi();
+    await extensionFactory(pi);
+
+    const mockCtx = {} as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
+
+    // 5 identical edits → reminder at 5th
+    for (let i = 0; i < 4; i++) {
+      const r = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+        toolName: "edit",
+        input: { filePath: "/foo.ts", oldString: "a", newString: "b" },
+        content: [{ type: "text", text: "ok" }],
+      }, mockCtx);
+      expect(r).toBeUndefined();
+    }
+    const r5 = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+      toolName: "edit",
+      input: { filePath: "/foo.ts", oldString: "a", newString: "b" },
       content: [{ type: "text", text: "ok" }],
     }, mockCtx);
-    expect(r3).toBeDefined();
-    expect(r3.content[0].text).toContain("loop-guard");
-    expect(r3.content[0].text).toContain("3 times in a row");
+    expect(r5).toBeDefined();
+    expect(r5.content[0].text).toContain("loop-guard");
+    expect(r5.content[0].text).toContain("5 times in a row");
+
+    // Different content on same file → should NOT share the same counter
+    // (5 edits with different old/new → no reminder)
+    for (let i = 0; i < 4; i++) {
+      const r = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+        toolName: "edit",
+        input: { filePath: "/foo.ts", oldString: `v${i}`, newString: `v${i + 1}` },
+        content: [{ type: "text", text: "ok" }],
+      }, mockCtx);
+      expect(r).toBeUndefined();
+    }
+    const r5diff = await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
+      toolName: "edit",
+      input: { filePath: "/foo.ts", oldString: "v4", newString: "v5" },
+      content: [{ type: "text", text: "ok" }],
+    }, mockCtx);
+    // Each different edit content is counted independently (1 each), so no threshold reached
+    expect(r5diff).toBeUndefined();
   });
 
   it("does not inject reminder for read tool", async () => {
@@ -85,11 +122,11 @@ describe("pi-loop-guard extension", () => {
     await extensionFactory(pi);
     const mockCtx = {} as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
 
-    // Trigger a repeat
-    for (let i = 0; i < 3; i++) {
+    // Trigger a repeat (threshold is 5)
+    for (let i = 0; i < 5; i++) {
       await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
         toolName: "edit",
-        input: { path: "/bar.ts" },
+        input: { filePath: "/bar.ts", oldString: "a", newString: "b" },
         content: [{ type: "text", text: "ok" }],
       }, mockCtx);
     }
@@ -122,8 +159,8 @@ describe("pi-loop-guard extension", () => {
     await extensionFactory(pi);
     const mockCtx = {} as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
 
-    // Trigger repeat
-    for (let i = 0; i < 3; i++) {
+    // Trigger repeat (threshold is 5)
+    for (let i = 0; i < 5; i++) {
       await (pi as unknown as { _emit: typeof createMockPi.prototype._emit })._emit("tool_result", {
         toolName: "write",
         input: { path: "/foo.ts" },

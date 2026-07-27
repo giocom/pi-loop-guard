@@ -54,6 +54,32 @@ describe("FileOperationTracker", () => {
     expect(tracker.getRepeats()[0]).toEqual({ path: "/x.ts", toolName: "write", count: 3 });
   });
 
+  it("tracks same file with different fingerprints independently", () => {
+    const tracker = new FileOperationTracker(3);
+    // Different edit content on the same file → separate counters
+    tracker.record("/foo.ts", "edit", "a::b");
+    tracker.record("/foo.ts", "edit", "a::b");
+    const sameEdit = tracker.record("/foo.ts", "edit", "a::b");
+    expect(sameEdit.count).toBe(3);
+    expect(sameEdit.isRepeating).toBe(true);
+
+    // Different content on same file → should NOT share counter
+    const diffEdit = tracker.record("/foo.ts", "edit", "x::y");
+    expect(diffEdit.count).toBe(1);
+    expect(diffEdit.isRepeating).toBe(false);
+  });
+
+  it("getRepeats excludes fingerprint from display path", () => {
+    const tracker = new FileOperationTracker(3);
+    tracker.record("/foo.ts", "edit", "a::b");
+    tracker.record("/foo.ts", "edit", "a::b");
+    tracker.record("/foo.ts", "edit", "a::b");
+    const repeats = tracker.getRepeats();
+    expect(repeats).toHaveLength(1);
+    expect(repeats[0].path).toBe("/foo.ts");
+    expect(repeats[0].path).not.toContain("::");
+  });
+
   it("reset clears all state", () => {
     const tracker = new FileOperationTracker(3);
     tracker.record("/foo.ts", "write");

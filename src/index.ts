@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { FileOperationTracker } from "./tracker.js";
 
-const REPEAT_THRESHOLD = 3;
+const REPEAT_THRESHOLD = 5;
 const RESPONSE_KEY = "__response_repeat__";
 const TOOL_REPEAT_PREFIX = "__tool_repeat__";
 
@@ -26,16 +26,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
     // --- write/edit file tracking (existing) ---
     if (toolName === "write" || toolName === "edit") {
-      const path = typeof input?.path === "string" ? input.path : undefined;
+      const path = typeof input?.path === "string" ? input.path
+                 : typeof input?.filePath === "string" ? input.filePath
+                 : undefined;
       if (path) {
-        const result = tracker.record(path, toolName);
-        const key = `${toolName}:${path}`;
+        // For edit tools, also track content fingerprint so only truly identical
+        // edits (same path + oldString + newString) are counted as repeats.
+        const editFingerprint = toolName === "edit"
+          ? `${input?.oldString ?? ""}::${input?.newString ?? ""}`
+          : undefined;
+        const result = tracker.record(path, toolName, editFingerprint);
+        const trackingKey = editFingerprint
+          ? `${toolName}:${path}::${editFingerprint}`
+          : `${toolName}:${path}`;
         const isEscalation =
           result.count >= REPEAT_THRESHOLD &&
           (result.count % REPEAT_THRESHOLD === 0 || result.count === REPEAT_THRESHOLD);
-        const escalationKey = `${key}@${result.count}`;
+        const escalationKey = `${trackingKey}@${result.count}`;
         if (isEscalation && !notifiedKeys.has(escalationKey)) {
-          pendingKeys.add(key);
+          pendingKeys.add(trackingKey);
           notifiedKeys.add(escalationKey);
           const reminder =
             result.count === REPEAT_THRESHOLD
@@ -124,7 +133,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
     const fileRepeats = tracker.getRepeats();
     const fileDetails = fileRepeats
-      .filter((r) => pendingKeys.has(`${r.toolName}:${r.path}`))
+      .filter((r) => [...pendingKeys].some((k) => k.startsWith(`${r.toolName}:${r.path}`)))
       .map((r) => `${r.path} (${r.toolName} \u00d7${r.count})`)
       .join(", ");
     if (fileDetails) {
