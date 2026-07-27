@@ -69,20 +69,31 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     // --- General tool call repetition tracking ---
     // Build a fingerprint from the tool name (+ command/code for parameterised tools).
     // This catches repeated litellm_skill_list, repeated agent-browser eval, etc.
+    // When no known field matches, fall back to the full input serialization so
+    // any tool with identical arguments (regardless of field naming) is detected.
     const cmd =
       typeof input?.command === "string" ? input.command :
       typeof input?.code === "string" ? input.code :
       typeof input?.url === "string" ? input.url :
+      typeof input?.script === "string" ? input.script :
+      typeof input?.expression === "string" ? input.expression :
+      typeof input?.eval === "string" ? input.eval :
+      typeof input?.text === "string" ? input.text :
       null;
 
-    const fingerprint = cmd ? `${toolName}:${cmd}` : toolName;
+    const fingerprint = cmd ? `${toolName}:${cmd}` : `${toolName}:${JSON.stringify(input)}`;
     const prev = toolCallCounts.get(fingerprint) ?? 0;
     const next = prev + 1;
     toolCallCounts.set(fingerprint, next);
 
-    if (next === REPEAT_THRESHOLD && !notifiedKeys.has(fingerprint)) {
-      pendingKeys.add(TOOL_REPEAT_PREFIX);
-      notifiedKeys.add(fingerprint);
+    // Periodic escalation: warn every REPEAT_THRESHOLD (5, 10, 15…)
+    // matching the file-tracking pattern so sustained loops don't go silent.
+    if (next >= REPEAT_THRESHOLD && next % REPEAT_THRESHOLD === 0) {
+      const escalationKey = `${fingerprint}@${next}`;
+      if (!notifiedKeys.has(escalationKey)) {
+        pendingKeys.add(TOOL_REPEAT_PREFIX);
+        notifiedKeys.add(escalationKey);
+      }
     }
   });
 
